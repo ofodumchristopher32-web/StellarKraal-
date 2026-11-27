@@ -5,10 +5,10 @@ import WalletConnect from '@/components/WalletConnect';
 import CollateralSummary from '@/components/CollateralSummary';
 import CollateralGrid from '@/components/CollateralGrid';
 import ErrorState from '@/components/ErrorState';
+import EmptyState from '@/components/EmptyState';
 import Pagination from '@/components/Pagination';
 import { usePagination } from '@/hooks/usePagination';
 import { useOwnerCollateral } from '@/hooks/useCollateral';
-import { Button } from '@/components/ui';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -260,15 +260,13 @@ function CollateralContent() {
               )}
             </>
           ) : (
-            <div className="bg-white rounded-2xl p-8 sm:p-12 shadow text-center">
-              <h2 className="text-2xl font-semibold text-brown-700 mb-3">
-                No Collateral Registered
-              </h2>
-              <p className="text-brown-400 mb-6">
-                Register livestock as collateral to start borrowing
-              </p>
-              <Button onClick={() => router.push('/borrow')}>Register Collateral</Button>
-            </div>
+            <EmptyState
+              illustration="collateral"
+              title="No Collateral Registered"
+              description="Register livestock as collateral to start borrowing"
+              ctaLabel="Register Collateral"
+              onCta={() => router.push('/borrow')}
+            />
           )}
         </>
       )}
@@ -278,9 +276,14 @@ function CollateralContent() {
 
 export default function CollateralPage() {
   return (
-    <Suspense fallback={<main className="max-w-6xl mx-auto px-4 py-10"><div className="text-brown/60">Loading collateral...</div></main>}>
+    <Suspense
+      fallback={
+        <main className="max-w-6xl mx-auto px-4 py-10">
+          <div className="text-brown/60">Loading collateral...</div>
+        </main>
+      }
+    >
       <CollateralContent />
     </Suspense>
   );
 }
-
