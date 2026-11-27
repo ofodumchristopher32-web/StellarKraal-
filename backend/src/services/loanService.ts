@@ -59,12 +59,12 @@ export const loanRepaySchema = z.object({
 /**
  * Zod schema that validates a loan liquidation payload.
  * Ensures `liquidator` is a valid Stellar public key, `loan_id` is a
- * non-negative integer, and `repay_amount` is a positive integer.
+ * non-negative integer, and an optional `repay_amount` is positive.
  */
 export const loanLiquidateSchema = z.object({
   liquidator: stellarPublicKeySchema,
   loan_id: z.number().int().nonnegative(),
-  repay_amount: z.number().int().positive(),
+  repay_amount: z.number().int().positive().optional(),
 });
 
 /** Inferred TypeScript type for a validated loan request payload. */
@@ -168,6 +168,14 @@ export class LoanNotLiquidatableError extends Error {
   }
 }
 
+/** Thrown when a partial liquidation requests more than the outstanding debt. */
+export class LoanLiquidationAmountError extends Error {
+  constructor() {
+    super("repay_amount exceeds outstanding debt");
+    this.name = "LoanLiquidationAmountError";
+  }
+}
+
 /**
  * Thrown when pagination or filter query parameters are malformed or out of
  * the accepted range.
@@ -260,14 +268,15 @@ export async function repayLoan(input: LoanRepayInput): Promise<{ xdr: string }>
  * for liquidation.
  *
  * @param input - Validated liquidation payload (see {@link loanLiquidateSchema}).
- * @returns Unsigned XDR and the updated loan record with status `"liquidated"`.
+ * @returns Unsigned XDR, the updated loan record, and the post-liquidation
+ * health factor. Omitting `repay_amount` liquidates the full outstanding debt.
  * @throws {@link LoanNotFoundError} When the loan ID does not exist in the database.
  * @throws {@link LoanNotLiquidatableError} When the health factor is at or above
  *   the liquidation threshold.
  * @throws If the RPC simulation or transaction preparation fails.
  */
 export async function liquidateLoan(input: LoanLiquidateInput) {
-  const { liquidator, loan_id, repay_amount } = input;
+  const { liquidator, loan_id } = input;
 
   const loan = getLoan(String(loan_id));
   if (!loan) {
@@ -289,7 +298,7 @@ export async function liquidateLoan(input: LoanLiquidateInput) {
 
   const twapResult = await oracleService.getTwapPrice(oracleAsset);
   const appraised = collateral?.appraised_value ?? 0;
-  const collateralCount = collateral?.quantity ?? 1;
+  const collateralCount = collateral?.count ?? 1;
 
   // Collateral value: prefer TWAP-adjusted price when available, fall back to appraisal.
   const twapCollateralValue =
@@ -310,33 +319,73 @@ export async function liquidateLoan(input: LoanLiquidateInput) {
     throw new LoanNotLiquidatableError(hf);
   }
 
+  const outstandingDebt = Math.max(loan.amount, 0);
+  const repayAmount = input.repay_amount ?? outstandingDebt;
+  if (repayAmount > outstandingDebt) {
+    throw new LoanLiquidationAmountError();
+  }
+  const isFullLiquidation = repayAmount >= outstandingDebt;
+  const remainingDebt = Math.max(outstandingDebt - repayAmount, 0);
+  const retainedCollateralValue = isFullLiquidation
+    ? 0
+    : collateralValue * (remainingDebt / outstandingDebt);
+  const postLiquidationHealthFactor = remainingDebt > 0 && retainedCollateralValue > 0
+    ? HealthFactorService.computeHealthFactor({
+        collateralValue: retainedCollateralValue,
+        debtValue: remainingDebt,
+        liquidationThreshold: LIQUIDATION_THRESHOLD / SCALE,
+      }) * SCALE
+    : null;
   const xdrTx = await buildContractTx(liquidator, "liquidate", [
     new Address(liquidator).toScVal(),
     nativeToScVal(BigInt(loan_id), { type: "u64" }),
-    nativeToScVal(BigInt(repay_amount), { type: "i128" }),
+    nativeToScVal(BigInt(repayAmount), { type: "i128" }),
   ]);
 
-  const updatedLoan = updateLoan(loan.id, { status: "liquidated" });
+  const updatedLoan = updateLoan(loan.id, {
+    amount: remainingDebt,
+    status: isFullLiquidation ? "liquidated" : "active",
+    health_factor: postLiquidationHealthFactor,
+  });
   if (collateral) {
-    updateCollateral(collateral.id, { status: "liquidated" });
+    updateCollateral(collateral.id, {
+      appraised_value: isFullLiquidation
+        ? 0
+        : collateral.appraised_value * (remainingDebt / outstandingDebt),
+      status: isFullLiquidation ? "liquidated" : "pledged",
+    });
   }
 
-  insertLiquidationEvent({ loan_id: loan.id, liquidator, repay_amount });
+  insertLiquidationEvent({ loan_id: loan.id, liquidator, repay_amount: repayAmount });
   insertTransaction({
     borrower: loan.borrower,
     type: "liquidation",
     status: "completed",
-    amount: repay_amount,
+    amount: repayAmount,
     loanId: loan.id,
     collateralId: loan.collateral_id,
   });
 
   // Increment metric
   const collateralType = collateral?.animal_type ?? "unknown";
-  loanLiquidatedTotal.inc({ collateral_type: collateralType, status: "liquidated" });
+  loanLiquidatedTotal.inc({
+    collateral_type: collateralType,
+    status: "liquidated",
+  });
 
-  fireWebhooks("loan.liquidated", { liquidator, loan_id, repay_amount });
-  return { xdr: xdrTx, loan: updatedLoan };
+  fireWebhooks("loan.liquidated", {
+    liquidator,
+    loan_id,
+    repay_amount: repayAmount,
+    partial: !isFullLiquidation,
+  });
+  return {
+    xdr: xdrTx,
+    loan: updatedLoan,
+    repay_amount: repayAmount,
+    health_factor: postLiquidationHealthFactor,
+    partial: !isFullLiquidation,
+  };
 }
 
 /**
