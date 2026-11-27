@@ -92,6 +92,12 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
 /**
  * Typography scale (design tokens)
  * ---------------------------------
@@ -399,7 +405,7 @@ export default function RootLayout({
               </nav>
               <Navbar />
               <MobileBottomNav />
-              <main id="main-content" className="pb-20 md:pb-0">
+              <main id="main-content" className="mobile-nav-content">
                 {/* Global error boundary — Issue #1399 */}
                 <ErrorBoundary fullPage>{children}</ErrorBoundary>
               </main>

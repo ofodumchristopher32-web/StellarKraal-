@@ -281,7 +281,7 @@ export default function Navbar() {
             {/* Theme toggle — visible on all screen sizes */}
             <ThemeToggle />
 
-            {/* Hamburger toggle — mobile only (#1498) */}
+            {/* Hamburger toggle — tablet only; phones use the bottom tab bar (#1088) */}
             <button
               ref={menuButtonRef}
               type="button"
@@ -289,7 +289,7 @@ export default function Navbar() {
               aria-expanded={drawerOpen}
               aria-controls={MOBILE_DRAWER_ID}
               aria-label={drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              className="lg:hidden flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg transition hover:bg-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--token-accent)]"
+              className="hidden md:flex lg:hidden items-center justify-center min-h-[44px] min-w-[44px] rounded-lg transition hover:bg-[var(--color-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--token-accent)]"
               style={{ color: 'var(--color-text)' }}
             >
               <Icon icon={drawerOpen ? X : Menu} size="md" className="text-current" />
@@ -320,7 +320,7 @@ export default function Navbar() {
       {/* Backdrop */}
       <div
         aria-hidden="true"
-        className={`lg:hidden fixed inset-0 z-40 transition-opacity duration-300 ${
+        className={`hidden md:block lg:hidden fixed inset-0 z-40 transition-opacity duration-300 ${
           drawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
@@ -334,7 +334,7 @@ export default function Navbar() {
         aria-modal="true"
         aria-label="Navigation menu"
         className={[
-          'lg:hidden fixed top-0 right-0 h-[100dvh] w-72 max-w-[85vw] z-50 flex flex-col',
+          'hidden md:flex lg:hidden fixed top-0 right-0 h-[100dvh] w-72 max-w-[85vw] z-50 flex-col',
           'shadow-2xl transition-transform duration-300 ease-in-out',
           drawerOpen ? 'translate-x-0' : 'translate-x-full',
         ].join(' ')}
